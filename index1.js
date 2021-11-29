@@ -3,6 +3,7 @@ const path = require("path");
 const fs = require("fs");
 const chalk = require("chalk");
 const createCsvWriter = require("csv-writer").createObjectCsvWriter;
+const { resolve } = require("path");
 
 const rl = require("readline").createInterface({
 	input: process.stdin,
@@ -17,24 +18,6 @@ const funzioni = [
 	"Effettua un versamento sul conto corrente",
 	"Effettua un prelievo sul conto corrente",
 	"Esci da SmartBK",
-];
-
-const headersConto = [
-	{ id: "nome", title: "NOME" },
-	{ id: "cognome", title: "COGNOME" },
-	{ id: "idConto", title: "IDCONTO" },
-];
-
-const headersMovimento = [
-	{ id: "idConto", title: "IDCONTO" },
-	{ id: "importo", title: "IMPORTO" },
-	{ id: "timestamp", title: "TIMESTAMP" },
-];
-
-const headersSaldo = [
-	{ id: "IDCONTO", title: "IDCONTO" },
-	{ id: "IMPORTO", title: "IMPORTO" },
-	{ id: "TIMESTAMP", title: "TIMESTAMP" },
 ];
 
 const readFile = async fileName => {
@@ -84,22 +67,14 @@ const chooseAction = async () => {
 						await mostraMovimenti();
 						break;
 					case "4":
-						console.log(chalk.inverse("\nVersamento sul conto\n"));
 						await creaMovimento();
 						break;
 					case "5":
-						console.log(chalk.inverse("\nPrelievo sul conto\n"));
 						await creaMovimento();
 						break;
 					case "6":
 						resolve(1);
 				}
-
-				console.log(
-					chalk.inverse(
-						"------------------------------------------------"
-					)
-				);
 
 				resolve(0);
 			});
@@ -107,7 +82,7 @@ const chooseAction = async () => {
 	} while (statusCode === 0);
 };
 
-const getIdConto = async (id = 0) => {
+const getIdConto = async () => {
 	const results = [];
 
 	return new Promise((resolve, reject) => {
@@ -115,38 +90,38 @@ const getIdConto = async (id = 0) => {
 			.pipe(csv({ separator: ";" }))
 			.on("data", data => results.push(data))
 			.on("end", () => {
-				id === 0
-					? resolve(results.length + 1)
-					: resolve(results.filter(e => Number(e.IDCONTO) === id)[0]);
+				resolve(results.length + 1);
 			});
 	});
 };
 
 const aggiornaSaldo = async (idConto, importoDaAggiungere) => {
-	const saldiUtenti = await readFile("Saldo_conti.csv");
+	const headers = [
+		{ id: "IDCONTO", title: "IDCONTO" },
+		{ id: "IMPORTO", title: "IMPORTO" },
+		{ id: "TIMESTAMP", title: "TIMESTAMP" },
+	];
 
-	const saldiAggiornati = saldiUtenti.map(e => {
-		console.log(Number(e.IDCONTO) === Number(idConto));
-		return Number(e.IDCONTO) === Number(idConto)
-			? {
-					IDCONTO: idConto.toString(),
-					IMPORTO: Number(e.IMPORTO)
-						? Number(e.IMPORTO) + Number(importoDaAggiungere)
-						: Number(importoDaAggiungere),
-					TIMESTAMP: `ORA: ${new Date().getHours()}:${new Date().getMinutes()} - DATA: ${new Date().getDate()}/${
-						new Date().getMonth() + 1
-					}/${new Date().getFullYear()}`,
-			  }
-			: e;
-	});
+	const saldiAggiornati = await readFile("Saldo_conti.csv").then(
+		saldiUtenti => {
+			saldi = saldiUtenti.map(e => {
+				console.log(Number(e.IDCONTO) === Number(idConto));
+				return Number(e.IDCONTO) === Number(idConto)
+					? {
+							IDCONTO: idConto.toString(),
+							IMPORTO: Number(e.IMPORTO)
+								? Number(e.IMPORTO) +
+								  Number(importoDaAggiungere)
+								: Number(importoDaAggiungere),
+							TIMESTAMP: `ORA: ${new Date().getHours()}:${new Date().getMinutes()} - DATA: ${new Date().getDate()}/${
+								new Date().getMonth() + 1
+							}/${new Date().getFullYear()}`,
+					  }
+					: e;
+			});
 
-	await writeFile(
-		"Saldo_conti.csv",
-		headersSaldo,
-		saldiAggiornati,
-		false
-	).then(() =>
-		console.log(chalk.inverse.green("Saldo aggiornato con successo\n"))
+			writeFile("Saldo_conti.csv", headers, saldi, false);
+		}
 	);
 };
 
@@ -158,12 +133,18 @@ const creaMovimento = async (idConto = null) => {
 			  })
 			: idConto;
 
+	const headers = [
+		{ id: "idConto", title: "IDCONTO" },
+		{ id: "importo", title: "IMPORTO" },
+		{ id: "timestamp", title: "TIMESTAMP" },
+	];
+
 	const importo = await new Promise((resolve, reject) => {
-		rl.question("\nInserisci importo: ", importo => {
+		rl.question("Inserisci importo: ", importo => {
 			console.log(
 				Number(importo) > 0
-					? `\nVersati ${chalk.greenBright(importo)}€ sul conto\n`
-					: `\nPrelevati ${chalk.redBright(importo)}€ dal conto\n`
+					? `Versati ${chalk.greenBright(importo)}€ sul conto`
+					: `Prelevati ${chalk.redBright(importo)}€ dal conto`
 			);
 
 			resolve(importo);
@@ -180,26 +161,33 @@ const creaMovimento = async (idConto = null) => {
 		},
 	];
 
-	await writeFile(
-		"SaldoMovimenti_conti.csv",
-		headersMovimento,
-		movimento
-	).then(() =>
-		console.log(
-			chalk.inverse.green("Lista movimenti aggiornata con successo\n")
-		)
+	await writeFile("SaldoMovimenti_conti.csv", headers, movimento).then(() =>
+		console.log("Lista movimenti aggiornata con successo")
 	);
 
-	await aggiornaSaldo(idConto, importo);
+	if (idConto)
+		await aggiornaSaldo(idConto, importo).then(() =>
+			console.log("Saldo aggiornato con successo")
+		);
 
 	return new Promise((resolve, reject) => resolve(importo));
 };
 
 const creaConto = async () => {
-	console.log(chalk.inverse("\nCreazione conto"));
+	const headers = [
+		{ id: "nome", title: "NOME" },
+		{ id: "cognome", title: "COGNOME" },
+		{ id: "idConto", title: "IDCONTO" },
+	];
+
+	const headers1 = [
+		{ id: "IDCONTO", title: "IDCONTO" },
+		{ id: "IMPORTO", title: "IMPORTO" },
+		{ id: "TIMESTAMP", title: "TIMESTAMP" },
+	];
 
 	const nome = await new Promise((resolve, reject) => {
-		rl.question("\nInserisci il tuo nome: ", nome => resolve(nome));
+		rl.question("Inserisci il tuo nome: ", nome => resolve(nome));
 	});
 
 	const cognome = await new Promise((resolve, reject) => {
@@ -210,17 +198,15 @@ const creaConto = async () => {
 
 	const conto = [{ nome: nome, cognome: cognome, idConto: idConto }];
 
-	await writeFile("Anagrafica_conti.csv", headersConto, conto);
+	await writeFile("Anagrafica_conti.csv", headers, conto);
 
 	console.log(
-		chalk.bold.green(
-			"\nBenvenuto, per completare la creazione del conto, è necessario depositare una somma iniziale\n"
-		)
+		"\nBenvenuto, per completare la creazione del conto, è necessario depositare una somma iniziale\n"
 	);
 
 	const importo = await creaMovimento(idConto);
 
-	await writeFile("Saldo_conti.csv", headersSaldo, [
+	await writeFile("Saldo_conti.csv", headers1, [
 		{
 			IDCONTO: idConto,
 			IMPORTO: Number(importo),
@@ -232,17 +218,13 @@ const creaConto = async () => {
 };
 
 const mostraSaldo = async () => {
-	console.log(chalk.inverse("\nSaldo conto\n"));
-
 	const idConto = await new Promise((resolve, reject) => {
 		rl.question("Inserisci il tuo id: ", id => resolve(id));
 	});
 
 	let saldi = await readFile("Saldo_conti.csv");
 
-	console.log(saldi);
-
-	saldi = saldi.filter(saldi => Number(saldi.IDCONTO) === Number(idConto))[0];
+	saldi = saldi.filter(saldi => saldi.IDCONTO === idConto)[0];
 
 	const stringa = `Il tuo saldo alle ore ${new Date().getHours()}:${new Date().getMinutes()} del giorno ${new Date().getDate()}/${
 		new Date().getMonth() + 1
@@ -252,8 +234,6 @@ const mostraSaldo = async () => {
 };
 
 const mostraMovimenti = async () => {
-	console.log(chalk.inverse("\nMovimenti conto\n"));
-
 	const idConto = await new Promise((resolve, reject) => {
 		rl.question("Inserisci il tuo id: ", id => resolve(id));
 	});
